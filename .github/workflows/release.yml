@@ -74,6 +74,7 @@ jobs:
         else
           VERSION="${GITHUB_REF#refs/tags/v}"
         fi
+        VERSION="${VERSION#v}"
         echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
         echo "TAG=v${VERSION}" >> $GITHUB_OUTPUT
         echo "Release version: ${VERSION}"
@@ -292,6 +293,11 @@ jobs:
         read -r MCP_TOOLS GUI_EPS HEADLESS_EPS <<< "$COUNTS"
         echo "MCP tools: ${MCP_TOOLS}, GUI: ${GUI_EPS}, headless: ${HEADLESS_EPS}"
 
+        # Use the actual artifact names from the release directory, not the
+        # tag-derived VERSION — the build names files from pom.xml.
+        ZIP_NAME=$(basename release/GhidraMCP-*.zip)
+        WHL_NAME=$(basename release/ghidra_mcp_bridge-*.whl)
+
         cat > release_notes.md << GENEOF
         # GhidraMCP Release ${VERSION}
 
@@ -309,17 +315,17 @@ jobs:
 
         ## Installation
 
-        1. Download **GhidraMCP-${VERSION}.zip** below
+        1. Download **${ZIP_NAME}** below
         2. In Ghidra: **File > Install Extensions > Add** and select the ZIP
         3. Restart Ghidra, enable plugin: **File > Configure > Configure All Plugins > GhidraMCP**
         4. Start server: **Tools > GhidraMCP > Start MCP Server**
-        5. Install Python bridge: \`uv tool install ./ghidra_mcp_bridge-${VERSION}-py3-none-any.whl\` (or \`pip install\` the same wheel)
+        5. Install Python bridge: \`uv tool install ./${WHL_NAME}\` (or \`pip install\` the same wheel)
         6. Run: \`bridge-mcp-ghidra\` (or \`python -m bridge_mcp_ghidra\`)
 
         ## What's Included
 
-        - **GhidraMCP-${VERSION}.zip** — Ghidra extension (GUI plugin)
-        - **ghidra_mcp_bridge-${VERSION}-py3-none-any.whl** — MCP protocol bridge wheel (${MCP_TOOLS} tools)
+        - **${ZIP_NAME}** — Ghidra extension (GUI plugin)
+        - **${WHL_NAME}** — MCP protocol bridge wheel (${MCP_TOOLS} tools)
 
         See [CHANGELOG.md](https://github.com/bethington/ghidra-mcp/blob/main/CHANGELOG.md) for detailed release notes.
         See [README.md](https://github.com/bethington/ghidra-mcp#readme) for full documentation.
@@ -329,7 +335,7 @@ jobs:
       run: |
         echo "=== DEBUG: Files that will be uploaded to release ==="
         echo "Main plugin zip:"
-        ls -la release/GhidraMCP-${{ steps.version.outputs.VERSION }}.zip || echo "❌ ZIP NOT FOUND"
+        ls -la release/GhidraMCP-*.zip || echo "❌ ZIP NOT FOUND"
 
         echo "All release files:"
         find release/ -type f -exec ls -la {} \;
@@ -357,8 +363,8 @@ jobs:
         name: "GhidraMCP ${{ steps.version.outputs.VERSION }}"
         body_path: ${{ steps.check_release.outputs.EXISTS == 'false' && 'release_notes.md' || '' }}
         files: |
-          release/GhidraMCP-${{ steps.version.outputs.VERSION }}.zip
-          release/ghidra_mcp_bridge-${{ steps.version.outputs.VERSION }}-py3-none-any.whl
+          release/GhidraMCP-*.zip
+          release/ghidra_mcp_bridge-*-py3-none-any.whl
           release/README.md
           release/INSTALLATION.md
         draft: false
@@ -371,15 +377,20 @@ jobs:
     - name: Verify release assets
       run: |
         TAG="${{ steps.version.outputs.TAG }}"
-        VERSION="${{ steps.version.outputs.VERSION }}"
         echo "Verifying release assets for ${TAG}..."
         ASSETS=$(gh release view "${TAG}" --json assets --jq '.assets[].name')
         echo "Assets found:"
         echo "$ASSETS"
-        if echo "$ASSETS" | grep -q "GhidraMCP-${VERSION}.zip"; then
+        if echo "$ASSETS" | grep -qE 'GhidraMCP-.*\.zip'; then
           echo "Ghidra extension ZIP confirmed in release assets"
         else
-          echo "ERROR: GhidraMCP-${VERSION}.zip is NOT in the release assets!"
+          echo "ERROR: No GhidraMCP ZIP found in the release assets!"
+          exit 1
+        fi
+        if echo "$ASSETS" | grep -qE 'ghidra_mcp_bridge-.*\.whl'; then
+          echo "Python bridge wheel confirmed in release assets"
+        else
+          echo "ERROR: No bridge wheel found in the release assets!"
           exit 1
         fi
       env:
@@ -396,17 +407,19 @@ jobs:
 
     - name: Release Summary
       run: |
+        ZIP_NAME=$(basename release/GhidraMCP-*.zip)
+        WHL_NAME=$(basename release/ghidra_mcp_bridge-*.whl)
         echo "## 🎉 Release ${{ steps.version.outputs.VERSION }} Created Successfully!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
-        echo "- **Plugin:** GhidraMCP-${{ steps.version.outputs.VERSION }}.zip" >> $GITHUB_STEP_SUMMARY
+        echo "- **Plugin:** ${ZIP_NAME}" >> $GITHUB_STEP_SUMMARY
         MCP_TOOLS=$(python3 -m tools.audit_server_scope --release-counts | cut -d' ' -f1)
-        echo "- **MCP Server:** ghidra_mcp_bridge-${{ steps.version.outputs.VERSION }}-py3-none-any.whl (${MCP_TOOLS} tools)" >> $GITHUB_STEP_SUMMARY
+        echo "- **MCP Server:** ${WHL_NAME} (${MCP_TOOLS} tools)" >> $GITHUB_STEP_SUMMARY
         echo "- **Documentation:** README.md, INSTALLATION.md" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
         echo "- [Release Page](https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.TAG }})" >> $GITHUB_STEP_SUMMARY
-        echo "- [Download ZIP](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.TAG }}/GhidraMCP-${{ steps.version.outputs.VERSION }}.zip)" >> $GITHUB_STEP_SUMMARY
+        echo "- [Download ZIP](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.TAG }}/${ZIP_NAME})" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📊 Build Info" >> $GITHUB_STEP_SUMMARY
         echo "- **Java Version:** 21" >> $GITHUB_STEP_SUMMARY
