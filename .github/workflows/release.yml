@@ -7,9 +7,9 @@ on:
   workflow_dispatch:  # Allows manual triggering
     inputs:
       version:
-        description: 'Release version (e.g., 1.2.0)'
+        description: 'Release version (e.g., 7.2.0) — must match recorded evidence'
         required: true
-        default: '1.2.0'
+        default: '7.1.0'
       create_tag:
         description: 'Create and push tag for this release'
         type: boolean
