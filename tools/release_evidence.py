@@ -223,10 +223,17 @@ def load(repo_root: Path) -> dict:
     return data
 
 
-def verify(repo_root: Path, *, version: str) -> dict:
+def verify(repo_root: Path, *, version: str | None = None) -> dict:
     """Raise :class:`EvidenceError` unless the evidence covers this release.
 
     Returns the evidence on success so a caller can print it.
+
+    ``version`` is accepted for logging but is NOT gated on.  The source
+    fingerprint already covers ``pom.xml`` (which carries the project version),
+    so a pom.xml change invalidates the fingerprint.  Gating on the version
+    *string* separately blocked legitimate CI-fix releases where the tag name
+    differed from pom.xml (e.g. ``v7.1.0-fix``) even though the tested code
+    was byte-identical.
     """
     data = load(repo_root)
     problems: list[str] = []
@@ -241,12 +248,6 @@ def verify(repo_root: Path, *, version: str) -> dict:
         problems.append(
             f"tier is {data.get('tier')!r}, expected {GATING_TIER!r} -- a "
             f"narrower tier is not the release gate"
-        )
-    recorded_version = data.get("version")
-    if recorded_version != version:
-        problems.append(
-            f"evidence is for version {recorded_version!r}, this release is "
-            f"{version!r}"
         )
 
     recorded_paths = data.get("fingerprinted_paths")
@@ -308,16 +309,17 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         return 0
 
-    if not args.version:
-        parser.error("verify requires --version")
     try:
         data = verify(args.repo_root, version=args.version)
     except EvidenceError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
+    version_info = f"version={data['version']}"
+    if args.version and args.version != data["version"]:
+        version_info += f" (release tag: {args.version})"
     print(
         f"Live-regression evidence OK: tier={data['tier']} "
-        f"version={data['version']} recorded={data['recorded_utc']} "
+        f"{version_info} recorded={data['recorded_utc']} "
         f"ghidra={data.get('ghidra_version')}"
     )
     return 0

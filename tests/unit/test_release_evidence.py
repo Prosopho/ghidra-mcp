@@ -189,10 +189,16 @@ def test_matching_evidence_verifies(repo: Path):
     assert data["ghidra_version"] == "12.1.3"
 
 
-def test_evidence_for_another_version_is_refused(repo: Path):
+def test_evidence_for_another_version_still_verifies(repo: Path):
+    """The tag name may differ from pom.xml (e.g. a CI-fix release).
+
+    The source fingerprint already covers pom.xml, so a real version bump
+    invalidates the fingerprint.  Gating on the version string separately
+    blocked legitimate releases of identical code under a different tag.
+    """
     record(repo, version="6.0.0", tier=GATING_TIER)
-    with pytest.raises(EvidenceError, match="6.0.0"):
-        verify(repo, version="7.0.0")
+    data = verify(repo, version="7.0.0")
+    assert data["version"] == "6.0.0"
 
 
 def test_evidence_from_a_narrower_tier_is_refused(repo: Path):
